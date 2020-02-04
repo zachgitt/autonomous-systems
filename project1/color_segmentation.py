@@ -7,6 +7,7 @@ matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 from roipoly import MultiRoi
 import time
+from mpl_toolkits.mplot3d import Axes3D
 
 logging.basicConfig(format='%(levelname)s ''%(processName)-10s : %(asctime)s '
                            '%(module)s.%(funcName)s:%(lineno)s %(message)s',
@@ -146,7 +147,7 @@ def calculate_distributions(pixel_vectors):
         sigma = np.cov(pixels.T)
         distributions.append((mu, sigma))
 
-    print("Calculating Distributions Complete" + str(time.time() - start))
+    print("Calculating Distributions Complete " + str(time.time() - start))
     return distributions
 
 
@@ -155,17 +156,28 @@ def plot_pixels(pixels, distributions):
 
     # Initialize figure
     fig = plt.figure()
-    ax = plt.axes(projection='3d')
+    ax = fig.add_subplot(111, projection='3d')
 
-    # Plot classes color
-    colors = ['r', 'b']
-    for pixel_vector, distribution, color in zip(pixels, distributions, colors):
+    # Subsample pixels to plot
+    samples = []
+    for pixel_vector in pixels:
+        sample = pixel_vector[np.random.randint(pixel_vector.shape[0], size=10000), :]
+        samples.append(sample)
+
+    # Plot classes by color
+    colors = ['red', 'blue']
+    for sample, color in zip(samples, colors):
+        ax.scatter3D(sample[:, 0], sample[:, 1], sample[:, 2], c=color)
+
+    # Plot mus
+    colors = ['orange', 'green']
+    for distribution, color in zip(distributions, colors):
         mu = distribution[0]
-        ax.scatter3D(pixel_vector[0], pixel_vector[1], pixel_vector[2], c=color)
+        ax.scatter3D(mu[0], mu[1], mu[2], c=color)
 
-    red_dot, = plt.plot(5, "ro", markersize=5)
-    blue_dot, = plt.plot(5, "bo", markersize=5)
-    plt.legend(['red barrel', 'background'], bbox_to_anchor=(1.2, 1.05))
+    # Plot legend
+    plt.legend(['red barrel', 'background', 'red barrel mu', 'background mu'])
+    print("Plotting Completed " + str(time.time() - start))
     plt.show()
 
 
@@ -181,7 +193,7 @@ def main():
     test_image_folder = base + '/test_images/'
 
     # Load train_images
-    train_images = load_images(train_image_folder, 'hsv')
+    train_images = load_images(train_image_folder, 'bgr')
 
     # Load bitmasks
     masks = load_masks(train_image_folder, mask_folder)
@@ -197,7 +209,7 @@ def main():
     plot_pixels([barrel_pixels, background_pixels], distributions)
 
     # Load test train_images
-    test_images = load_images(test_image_folder, 'hsv')
+    test_images = load_images(test_image_folder, 'bgr')
 
     # Predict test image pixels
 
