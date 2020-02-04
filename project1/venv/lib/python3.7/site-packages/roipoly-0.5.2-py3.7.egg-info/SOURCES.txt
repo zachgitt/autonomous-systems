@@ -1,0 +1,14 @@
+CHANGELOG.md
+LICENSE
+MANIFEST.in
+README.org
+setup.cfg
+setup.py
+roipoly/__init__.py
+roipoly/roipoly.py
+roipoly/version.py
+roipoly.egg-info/PKG-INFO
+roipoly.egg-info/SOURCES.txt
+roipoly.egg-info/dependency_links.txt
+roipoly.egg-info/requires.txt
+roipoly.egg-info/top_level.txt
