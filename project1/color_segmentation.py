@@ -181,6 +181,35 @@ def plot_pixels(pixels, distributions):
     plt.show()
 
 
+def predict_pixel(pixel, distributions):
+    return 'red barrel'
+
+
+def predict_images(images, distributions):
+    pass
+
+
+# Show all red barrel predicted pixels as red
+def print_predictions(images, distributions):
+
+    for image in images:
+        # Copy image to overwrite
+        image_copy = image.copy()
+        for i in range(image.shape[0]):
+            for j in range(image.shape[1]):
+                pixel = image[i][j]
+                predicted_class = predict_pixel(pixel, distributions)
+
+                # Red barrel
+                if predicted_class == 'red barrel':
+                    image_copy[i][j][0] = 255
+                    image_copy[i][j][1] = 0
+                    image_copy[i][j][2] = 0
+
+        plt.imshow(image_copy)
+        plt.show()
+
+
 def main():
     ########
     # Main #
@@ -212,6 +241,8 @@ def main():
     test_images = load_images(test_image_folder, 'bgr')
 
     # Predict test image pixels
+    predict_images(test_images, distributions)
+    print_predictions(test_images, distributions)
 
     # Draw boundary
 
