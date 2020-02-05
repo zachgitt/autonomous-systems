@@ -140,30 +140,30 @@ def split_pixels(images, masks):
     print("Splitting Pixels Complete " + str(time.time() - start))
 
     # Return vector of pixels per class
-    pixels_per_class = [np.array(barrel_pixels, np.array(background_pixels))]
+    pixels_per_class = [np.array(barrel_pixels), np.array(background_pixels)]
     return pixels_per_class
 
 
 # Convert scale
 # Convert 8-bit into 6-bit (by dividing by 4)
 # 8-bit (0-255) to 6-bit (0-63)
-def convert_scale(pixels, multiple):
+def scale_training_pixels(pixels_per_class, multiple):
     scaled_vectors = []
-    for pixel_vector in pixels:
+    for pixel_vector in pixels_per_class:
         scaled_vector = pixel_vector * multiple
         scaled_vectors.append(scaled_vector)
 
-    print("Scaling Pixels Completed" + str(time.time() - start))
+    print("Scaling Pixels Complete " + str(time.time() - start))
     return scaled_vectors
 
 
 # Each class has a distribution defined by Mu vector of length 3, and Sigma a 3x3 matrix
-def calculate_distributions(pixel_vectors, names):
+def calculate_distributions(pixels_per_class, names):
     distributions = []
-    for pixels, name in zip(pixel_vectors, names):
+    for pixel_vector, name in zip(pixels_per_class, names):
         # Calculate mu and sigma (sigma must be transposed)
-        mu = np.mean(pixels, axis=0)
-        sigma = np.cov(pixels.T)
+        mu = np.mean(pixel_vector, axis=0)
+        sigma = np.cov(pixel_vector.T)
         distributions.append((mu, sigma, name))
 
     print("Calculating Distributions Complete " + str(time.time() - start))
@@ -201,7 +201,7 @@ def plot_pixels(pixels_per_class, distributions):
     for distribution in distributions:
         names.append(distribution[2] + ' mu')
     plt.legend(names)
-    print("Plotting Completed " + str(time.time() - start))
+    print("Plotting Complete " + str(time.time() - start))
     plt.show()
 
 
@@ -274,39 +274,50 @@ def create_table(table_file, distributions, dims, pixels_per_class, class_index)
                 table[i][j][k] = likelihood * prior / normalization
 
     np.save(table_file, table)
+    print("Table Creation Complete " + str(time.time() - start))
 
 
-def predict_pixel(pixel, distributions, table_folder, pixels_per_class):
+def load_tables(table_folder, distributions, dimensions, pixels_per_class):
 
-    # Get highest probability class
-    class_name = None
-    max_probability = 0
-
-    # Save each class distribution into its own table
+    # Create a table with each classes distribution if it does not exist
+    tables = []
     for i, distribution in enumerate(distributions):
-
-        # Create class table if does not exist
         name = distribution[2]
         table_file = table_folder + name + '.npy'
         if not os.path.exists(table_file):
-            create_table(table_file, distributions, [64, 64, 64], pixels_per_class, i)
+            create_table(table_file, distributions, dimensions, pixels_per_class, i)
+
+        table = np.load(table_file, allow_pickle=True)
+        tables.append(table)
+
+    print("Table Loading Complete " + str(time.time() - start))
+    return tables
+
+
+def predict_pixel(pixel, class_names, tables):
+
+    # Get highest probability class
+    max_name = None
+    max_probability = 0
+
+    # Save each class distribution into its own table
+    for name, table in zip(class_names, tables):
 
         # The pixel belongs to the class with highest probability
-        table = np.load(table_file, allow_pickle=True)
         probability = table[pixel[0]][pixel[1]][pixel[2]]
         if probability > max_probability:
             max_probability = probability
-            class_name = name
+            max_name = name
 
-    return class_name
+    return max_name
 
 
-def predict_images(images, distributions, table_folder, pixels_per_class):
+def predict_images(images, class_names, tables):
     pass
 
 
 # Show all red barrel predicted pixels as red
-def print_predictions(images, distributions, table_folder, pixels_per_class):
+def print_predictions(images, class_names, tables):
 
     for image in images:
         # Copy image to overwrite
@@ -315,8 +326,8 @@ def print_predictions(images, distributions, table_folder, pixels_per_class):
             for j in range(image.shape[1]):
 
                 # Convert to 6-bit
-                pixel = np.round(image[i][j] / 4)
-                predicted_class = predict_pixel(pixel, distributions, table_folder, pixels_per_class)
+                pixel = np.floor(image[i][j] / 4).astype(int)
+                predicted_class = predict_pixel(pixel, class_names, tables)
 
                 # Red barrel
                 if predicted_class == 'red barrel':
@@ -325,6 +336,7 @@ def print_predictions(images, distributions, table_folder, pixels_per_class):
                     image_copy[i][j][2] = 0
 
         plt.imshow(image_copy)
+        print("Image Predicting Complete " + str(time.time() - start))
         plt.show()
 
 
@@ -334,6 +346,7 @@ def main():
     ########
 
     # Config
+    class_names = ['red barrel', 'background']
     color_space = 'rgb'
     base = '/Users/zacharygittelman/Documents/repos/autonomous-systems/project1'
     train_image_folder = base + '/train_images/'
@@ -341,32 +354,34 @@ def main():
     test_image_folder = base + '/test_images/'
     table_folder = base + '/tables_' + color_space + '/'
 
-    # Load train_images
+    # Load train images
     train_images = load_images(train_image_folder, color_space)
 
-    # Load bitmasks
+    # Load bit masks
     masks = load_masks(train_image_folder, mask_folder)
 
     # Split pixels by class
     pixels_per_class = split_pixels(train_images, masks)
 
     # Reduce pixel scale
-    pixels_per_class = convert_scale(pixels_per_class, 1/4)
+    pixels_per_class = scale_training_pixels(pixels_per_class, 1/4)
 
     # Calculate distributions
-    # TODO: mu and sigma may need to be casted to integers
-    names = ['red barrel', 'background']
-    distributions = calculate_distributions(pixels_per_class, names)
+    distributions = calculate_distributions(pixels_per_class, class_names)
 
-    # Plot pixels and mu's in 3D space
+    # Plot pixels and mus in 3D space
     plot_pixels(pixels_per_class, distributions)
 
-    # Load test train_images
+    # Load tables
+    dimensions = [64, 64, 64]
+    tables = load_tables(table_folder, distributions, dimensions, pixels_per_class)
+
+    # Load test images
     test_images = load_images(test_image_folder, color_space)
 
     # Predict test image pixels
-    predict_images(test_images, distributions, table_folder, pixels_per_class)
-    print_predictions(test_images, distributions, table_folder, pixels_per_class)
+    predict_images(test_images, class_names, tables)
+    print_predictions(test_images, class_names, tables)
 
     # Draw boundary
 
