@@ -11,6 +11,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from math import exp, pi, sqrt
 from numpy.linalg import det, inv
 from numpy import dot
+from skimage.measure import label, regionprops
 
 logging.basicConfig(format='%(levelname)s ''%(processName)-10s : %(asctime)s '
                            '%(module)s.%(funcName)s:%(lineno)s %(message)s',
@@ -33,6 +34,10 @@ def load_images(folder, color_space):
     # Read in train_images from folder
     images = []
     for filename in os.listdir(folder):
+
+        # Skip . files
+        if filename[0] == '.':
+            continue
 
         # Default reads in as BGR (blue-green-red encoding)
         img_bgr = cv2.imread(os.path.join(folder, filename))
@@ -77,12 +82,26 @@ def create_mask(image_folder, image_file):
     return mask
 
 
+def get_image_names(image_folder):
+    names = []
+    for image_file in os.listdir(image_folder):
+        # Skip dot file
+        if image_file[0] == '.':
+            continue
+        names.append(image_file[:-4])
+    return names
+
+
 # Read masks
 def load_masks(image_folder, mask_folder):
 
     # Load masks for each image
     masks = []
     for image_file in os.listdir(image_folder):
+
+        # Skip non png
+        if image_file[-3:] != 'png':
+            continue
 
         # Create mask if it does not exist
         mask_file = mask_folder + image_file[:-4] + '.npy'
@@ -126,21 +145,33 @@ def print_masks(images, masks):
 
 
 # Splits all image pixels into a list of pixels for each class
-def split_pixels(images, masks):
-    barrel_pixels = []
-    background_pixels = []
-    for image, mask in zip(images, masks):
-        for i in range(image.shape[0]):
-            for j in range(image.shape[1]):
-                if mask[i][j]:
-                    barrel_pixels.append(image[i][j])
-                else:
-                    background_pixels.append(image[i][j])
+def split_pixels(images, masks, split_folder):
 
-    print("Splitting Pixels Complete " + str(time.time() - start))
+    # Files do not exist
+    if not os.listdir(split_folder):
+
+        # Split pixels
+        barrel_pixels = []
+        background_pixels = []
+        for image, mask in zip(images, masks):
+            for i in range(image.shape[0]):
+                for j in range(image.shape[1]):
+                    if mask[i][j]:
+                        barrel_pixels.append(image[i][j])
+                    else:
+                        background_pixels.append(image[i][j])
+        # Save files
+        np.save(split_folder + 'red barrel.npy', barrel_pixels)
+        np.save(split_folder + 'background.npy', background_pixels)
+
+    # Load pixels per class
+    pixels_per_class = [
+        np.load(split_folder + 'red barrel.npy', allow_pickle=True),
+        np.load(split_folder + 'background.npy', allow_pickle=True)
+    ]
 
     # Return vector of pixels per class
-    pixels_per_class = [np.array(barrel_pixels), np.array(background_pixels)]
+    print("Splitting Pixels Complete " + str(time.time() - start))
     return pixels_per_class
 
 
@@ -312,8 +343,31 @@ def predict_pixel(pixel, class_names, tables):
     return max_name
 
 
+# Return bitmasks with red barrel labeled as 1
 def predict_images(images, class_names, tables):
-    pass
+
+    # Save bitmasks for each image
+    bitmasks = []
+    for count, image in enumerate(images):
+
+        bitmask = np.zeros((image.shape[0], image.shape[1]))
+        for i in range(image.shape[0]):
+            for j in range(image.shape[1]):
+
+                # Convert to 6-bit
+                pixel = np.floor(image[i][j] / 4).astype(int)
+                predicted_class = predict_pixel(pixel, class_names, tables)
+
+                # Red barrel
+                if predicted_class == 'red barrel':
+                    bitmask[i][j] = 1
+
+        # Save image bitmask
+        bitmasks.append(bitmask)
+        print('Image ' + str(count+1) + '/' + str(len(images)) + ' Complete ' + str(time.time() - start))
+
+    print("Predicting Images Complete " + str(time.time() - start))
+    return bitmasks
 
 
 # Show all red barrel predicted pixels as red
@@ -336,8 +390,107 @@ def print_predictions(images, class_names, tables):
                     image_copy[i][j][2] = 0
 
         plt.imshow(image_copy)
-        print("Image Predicting Complete " + str(time.time() - start))
+        print("Pixel Prediction Printing Complete " + str(time.time() - start))
         plt.show()
+
+
+# Draw box boundaries on each image
+def draw_boundaries(image, regions, bounded_folder, name, distance_constant):
+    # Plot image
+    fig, ax = plt.subplots()
+    ax.imshow(image, cmap=plt.cm.gray)
+
+    # Save largest k regions
+    k = 2
+    areas = [region.area for region in regions]
+    largest_indices = np.argsort(areas)[-k:]
+
+    # Plot largest k regions
+    for index in largest_indices:
+        region = regions[index]
+
+        # Plot only if similar dimensions to barrel
+        if region.minor_axis_length == 0:
+            continue
+
+        ratio = region.major_axis_length / region.minor_axis_length
+        if 1 < ratio < 3 and region.extent > .5:
+
+            # Plot centroid
+            y0, x0 = region.centroid
+            ax.plot(x0, y0, '.g', markersize=15)
+
+            print(x0)
+            print(y0)
+
+            # Plot bounding box
+            minr, minc, maxr, maxc = region.bbox
+            bx = (minc, maxc, maxc, minc, minc)
+            by = (minr, minr, maxr, maxr, minr)
+            ax.plot(bx, by, '-r', linewidth=2.5)
+
+            # Plot distance
+            dist = str(round(distance_constant / region.major_axis_length, 2))
+            ax.annotate(dist, xy=region.centroid, xycoords='data', color='r')
+            print(dist)
+            print('\n')
+
+    path = bounded_folder + name + '.png'
+    plt.savefig(path, format='png')
+    plt.close(fig)
+    return cv2.imread(path)
+
+
+# Use similar triangles to calculate distance to barrel
+def calculate_distances(image, regions, distance_constant):
+
+    distances = []
+    for region in regions:
+        distance = distance_constant / region.major_axis_length
+        distances.append(distance)
+
+    return distances
+
+
+# Draw box boundaries on each image and determine distances
+def label_images(bitmasks, images, distance_constant, image_folder, label_folder):
+
+    #labeled_images = []
+    for bitmask, image, name in zip(bitmasks, images, get_image_names(image_folder)):
+
+        # Identify all regions
+        regions = regionprops(label(bitmask))
+
+        # Draw boundaries on image
+        bounded_image = draw_boundaries(image, regions, label_folder, name, distance_constant)
+
+        # Calculate distances
+        #distances = calculate_distances(image, regions, distance_constant)
+        #import pdb; pdb.set_trace()
+        #labeled_image = write_distance_to_image(bounded_image, distances)
+        #labeled_images.append(labeled_image)
+
+    print("Image Labeling Complete " + str(time.time() - start))
+    #return labeled_images
+
+
+def save_images(images, folder):
+    for image, name in zip(images, get_image_names(folder)):
+        cv2.imwrite(folder + name, image)
+
+
+def calculate_constant(base):
+
+    # Store constant
+    const = 0
+
+    # Try reading in constant to calculate distances
+    path = base + 'const.txt'
+    if os.path.exists(path):
+        with open(path) as f:
+            const = f.readline()
+
+    return const
 
 
 def main():
@@ -346,6 +499,7 @@ def main():
     ########
 
     # Config
+    distance_constant = 734
     class_names = ['red barrel', 'background']
     color_space = 'rgb'
     base = '/Users/zacharygittelman/Documents/repos/autonomous-systems/project1'
@@ -353,6 +507,13 @@ def main():
     mask_folder = base + '/masks/'
     test_image_folder = base + '/test_images/'
     table_folder = base + '/tables_' + color_space + '/'
+    label_folder = base + '/labeled_images/'
+    split_folder = base + '/split/'
+    bounded_folder = base + '/bounded_images/'
+
+    """
+        TRAINING 
+    """
 
     # Load train images
     train_images = load_images(train_image_folder, color_space)
@@ -360,8 +521,11 @@ def main():
     # Load bit masks
     masks = load_masks(train_image_folder, mask_folder)
 
+    # Calculate distance constant
+    #distance_constant = calculate_constant(base)
+
     # Split pixels by class
-    pixels_per_class = split_pixels(train_images, masks)
+    pixels_per_class = split_pixels(train_images, masks, split_folder)
 
     # Reduce pixel scale
     pixels_per_class = scale_training_pixels(pixels_per_class, 1/4)
@@ -370,21 +534,26 @@ def main():
     distributions = calculate_distributions(pixels_per_class, class_names)
 
     # Plot pixels and mus in 3D space
-    plot_pixels(pixels_per_class, distributions)
+    #plot_pixels(pixels_per_class, distributions)
 
     # Load tables
     dimensions = [64, 64, 64]
     tables = load_tables(table_folder, distributions, dimensions, pixels_per_class)
 
+    """
+        TESTING 
+    """
+
     # Load test images
     test_images = load_images(test_image_folder, color_space)
 
     # Predict test image pixels
-    predict_images(test_images, class_names, tables)
-    print_predictions(test_images, class_names, tables)
+    boundary_bitmasks = predict_images(test_images, class_names, tables)
+    #print_predictions(test_images, class_names, tables)
 
-    # Draw boundary
-
+    # Draw boxes and determine distances
+    label_images(boundary_bitmasks, test_images, distance_constant, test_image_folder, label_folder)
+    #save_images(labeled_images, label_folder)
 
 if __name__ == "__main__":
     main()
