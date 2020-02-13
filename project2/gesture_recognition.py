@@ -1,14 +1,30 @@
 from os import listdir
 from os.path import isfile, join
 import pandas as pd
+import seaborn as sns; sns.set()
+import matplotlib.pyplot as plt
 
 
 class Gesture:
 
     # Define initializer
-    def __init__(self, df_in, label_in):
+    def __init__(self, df_in, label_in, file_in):
         self.df = df_in
         self.label = label_in
+        self.file = file_in
+
+    def get_df(self):
+        return self.df
+
+    def get_label(self):
+        return self.label
+
+    def get_file(self):
+        return self.file
+
+
+def file_to_jpg(file):
+    return file.split('.')[0] + '.jpg'
 
 
 # Removes .txt and
@@ -44,7 +60,11 @@ def get_label(file):
 # Plots the accelerometer and gyroscope data against the time data
 def plot_gestures(gestures, folder):
     for gesture in gestures:
-        pass
+        df = gesture.get_df()
+        plot = sns.lineplot(x='ts', y='value', hue='variable', data=pd.melt(df, ['ts']))
+        fig = plot.get_figure()
+        fig.savefig(folder + file_to_jpg(gesture.get_file()))
+        plt.show()
 
 
 """
@@ -62,7 +82,7 @@ def load_txt_files(folder):
         label = get_label(file)
         if isfile(path):
             df = pd.read_csv(path, sep='\t', names=['ts', 'Ax', 'Ay', 'Az', 'Wx', 'Wy', 'Wz'])
-            g = Gesture(df, label)
+            g = Gesture(df, label, file)
             gestures.append(g)
 
     # Return imu dataframes
@@ -78,10 +98,9 @@ def main():
     plot_folder = base + '/imu_plots/'
 
     # Load imu data
-    gestures = [
-        load_txt_files(train_multiple_folder),
-        load_txt_files(train_single_folder)
-    ]
+    gestures = []
+    gestures += load_txt_files(train_multiple_folder)
+    gestures += load_txt_files(train_single_folder)
 
     # Plot gestures
     plot_gestures(gestures, plot_folder)
