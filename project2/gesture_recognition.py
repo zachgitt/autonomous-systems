@@ -218,7 +218,7 @@ def initial_probs():
     return Pi
 
 
-def expectation_maximization(gestures, label):
+def expectation_maximization(gestures, label, num_states):
 
     # Initialize model (lambda)
     model = None
@@ -257,6 +257,7 @@ def main():
     plot_folder = base + '/imu_plots/'
     kmeans_plot_folder = base + '/kmeans_plot/'
     optimal_k = 10
+    num_hidden_states = 6
 
     # Load train imu data
     gestures = []
@@ -273,7 +274,7 @@ def main():
     # Model each type
     models = []
     for label in ['beat3', 'beat4', 'circle', 'eight', 'inf', 'wave']:
-        model = expectation_maximization(gestures, label)
+        model = expectation_maximization(gestures, label, num_hidden_states)
         models.append(model)
 
     # Load test imu data
