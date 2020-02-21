@@ -206,6 +206,46 @@ def plot_kmeans(points, folder):
     plt.savefig(folder + 'kmeans.jpg')
 
 
+def transition_matrix():
+    return T
+
+
+def emission_matrix():
+    return E
+
+
+def initial_probs():
+    return Pi
+
+
+def expectation_maximization(gestures, label):
+
+    # Initialize model (lambda)
+    model = None
+    T = transition_matrix()
+    E = emission_matrix()
+    Pi = initial_probs()
+
+    # Stop when likelihood plateus
+    likelihoods = []
+    likelihood_increases = True
+    while likelihood_increases:
+
+        # Expectation step: calculate parameters
+        alpha = None
+        beta = None
+        gamma = None
+        xi = None
+
+        # Maximization step: improve T, E, Pi (lambda)
+
+        # Save likelihoods
+        likelihood = None
+        likelihoods.append(likelihood)
+
+    # Plot likelihood values
+
+    return model
 
 
 def main():
@@ -229,6 +269,18 @@ def main():
     # Discretize measurements with kmeans
     plot_kmeans(get_points(gestures), kmeans_plot_folder)
     gestures = discretize(gestures, optimal_k)
+
+    # Model each type
+    models = []
+    for label in ['beat3', 'beat4', 'circle', 'eight', 'inf', 'wave']:
+        model = expectation_maximization(gestures, label)
+        models.append(model)
+
+    # Load test imu data
+
+    # Discretize test data
+
+    # Predict test data (most probable model)
 
 
 if __name__ == '__main__':
