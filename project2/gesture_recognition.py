@@ -29,6 +29,9 @@ class Gesture:
         assert(len(cluster_indices) == self.df.shape[0])
         self.df['codewords'] = cluster_indices
 
+    def get_codwords(self):
+        return self.df['codewords']
+
 
 def file_to_jpg(file):
     return file.split('.')[0] + '.jpg'
@@ -206,8 +209,29 @@ def plot_kmeans(points, folder):
     plt.savefig(folder + 'kmeans.jpg')
 
 
-def transition_matrix():
-    return T
+def get_class_codewords(gestures, label):
+    codewords = []
+    for gesture in gestures:
+        if gesture.get_label() == label:
+            codewords.extend(gesture.get_codwords())
+
+    return codewords
+
+
+def get_alpha(codewords, A, B, Pi):
+
+    import pdb; pdb.set_trace()
+    # Initialization (t=0)
+    T = len(codewords)
+    N = len(Pi)
+    alpha = np.ndarray(shape=(T, N))
+    alpha[0] = Pi * B[codewords[0]]
+
+    # Induction (t=t+1)
+    for t in range(1, T):
+        alpha[t] = np.dot(alpha[t-1], A.T) * B[codewords[1]]
+
+    return alpha
 
 
 def emission_matrix():
@@ -218,13 +242,14 @@ def initial_probs():
     return Pi
 
 
-def expectation_maximization(gestures, label, num_states):
+def expectation_maximization(codewords, N, M):
 
     # Initialize model (lambda)
     model = None
-    T = transition_matrix()
-    E = emission_matrix()
-    Pi = initial_probs()
+    A = np.full(shape=(N, N), fill_value=1/N)
+    B = np.full(shape=(M, N), fill_value=1/N)
+    Pi = np.full(shape=(N,), fill_value=0)
+    Pi[0] = 1
 
     # Stop when likelihood plateus
     likelihoods = []
@@ -232,7 +257,7 @@ def expectation_maximization(gestures, label, num_states):
     while likelihood_increases:
 
         # Expectation step: calculate parameters
-        alpha = None
+        alpha = get_alpha(codewords, A, B, Pi)
         beta = None
         gamma = None
         xi = None
@@ -274,7 +299,8 @@ def main():
     # Model each type
     models = []
     for label in ['beat3', 'beat4', 'circle', 'eight', 'inf', 'wave']:
-        model = expectation_maximization(gestures, label, num_hidden_states)
+        codewords = get_class_codewords(gestures, label)
+        model = expectation_maximization(codewords, num_hidden_states, optimal_k)
         models.append(model)
 
     # Load test imu data
