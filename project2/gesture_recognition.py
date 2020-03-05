@@ -473,7 +473,7 @@ def main():
     # Load train imu data
     gestures = []
     gestures += load_txt_files(train_multiple_folder)
-    gestures += load_txt_files(train_single_folder)
+    #gestures += load_txt_files(train_single_folder)
 
     # Plot gestures
     plot_gestures(gestures, plot_folder)
@@ -486,7 +486,7 @@ def main():
     models = get_models(gestures, labels, num_hidden_states, optimal_k, likelihood_plots, models_folder)
 
     # Load test imu data
-    test_gestures = load_txt_files(train_single_folder) # TODO: change to test folder
+    test_gestures = load_txt_files(test) # TODO: change to test folder
 
     # Discretize test data
     test_gestures = discretize(test_gestures, optimal_k)
