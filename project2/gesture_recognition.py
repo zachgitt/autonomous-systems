@@ -486,7 +486,7 @@ def main():
     models = get_models(gestures, labels, num_hidden_states, optimal_k, likelihood_plots, models_folder)
 
     # Load test imu data
-    test_gestures = load_txt_files(test) # TODO: change to test folder
+    test_gestures = load_txt_files(test_folder) # TODO: change to test folder
 
     # Discretize test data
     test_gestures = discretize(test_gestures, optimal_k)
