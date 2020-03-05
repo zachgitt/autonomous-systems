@@ -4,7 +4,9 @@ import pandas as pd
 import seaborn as sns; sns.set()
 import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
+from sklearn.cluster import KMeans
 import numpy as np
+import pickle
 
 
 class Model:
@@ -148,9 +150,12 @@ def discretize(gestures, k):
     centers = kmeans(get_points(gestures), k)
     tree = cKDTree(centers)
 
+    km = KMeans(n_clusters=k).fit(get_points(gestures)) # TODO: remove SCIKIT
+
     # Save codeword for each point (cluster)
     for gesture in gestures:
         _, indices = tree.query(gesture.get_df().drop(columns=['ts']))
+        indices = km.predict(gesture.get_df().drop(columns=['ts'])) # TODO remove
         gesture.set_codewords(indices)
 
     return gestures
@@ -240,40 +245,37 @@ def get_alpha(codewords, A, B, Pi):
 
     # Save scales
     scales = np.ndarray(shape=(T,))
-    scales[0] = np.sum(alpha[0])
-    alpha[0] /= scales[0]
+    scales[0] = np.nan_to_num(1/np.sum(alpha[0]), nan=100000, posinf=100000, neginf=100000)
+    alpha[0] *= scales[0]
 
     # Induction (t+1=t)
     for t in range(1, T):
         alpha[t] = np.dot(alpha[t-1], A) * B[codewords[t]]
         # Scale alpha
-        scales[t] = np.sum(alpha[t])
-        alpha[t] /= scales[t]
+        scales[t] = np.nan_to_num(1 / np.sum(alpha[t]), nan=100000, posinf=100000, neginf=100000)
+        alpha[t] *= scales[t]
 
     return alpha, scales
 
 
-def get_beta(codewords, A, B, Pi):
+def get_beta(codewords, A, B, Pi, scales):
 
     # Initialize (T=end)
     T = len(codewords)
     N = len(Pi)
     beta = np.ndarray(shape=(T, N))
-    beta[T-1] = np.ones(N)
-
-    # Save scales
-    scales = np.ndarray(shape=(T,))
-    scales[T-1] = np.sum(beta[T-1])
-    beta[T-1] /= scales[T-1]
+    beta[T-1] = scales[T-1]
 
     # Induction
     for t in reversed(range(T-1)):
-        beta[t] = np.dot(A, B[codewords[t+1]].T).T * beta[t+1]
-        # Scale beta
-        scales[t] = np.sum(beta[t])
-        beta[t] /= scales[t]
+        for i in range(N):
+            sum = 0
+            for j in range(N):
+                sum += A[i][j] * B[codewords[t+1]][j] * beta[t+1][j]
+            beta[t][i] = scales[t] * sum
+        #beta[t] = scales[t] * np.dot(A, B[codewords[t+1]].T).T * beta[t+1]
 
-    return beta, scales
+    return beta
 
 
 def get_gamma(alpha, beta):
@@ -353,13 +355,26 @@ def likelihood_increased(likelihoods, delta=0.001):
     return delta < (likelihoods[-1] - likelihoods[-2])
 
 
-def expectation_maximization(codewords, N, M, label):
+def plot_likelihoods(likelihoods, label, folder):
+    # Create plot
+    plt.plot(likelihoods)
+    plt.xlabel('Iteration')
+    plt.ylabel('Likelihood of ' + label.capitalize())
+    plt.savefig(folder + label + '_likelihoods.jpg')
+    plt.clf()
+
+
+def expectation_maximization(codewords, N, M, label, folder):
+
+    # Print
+    print('Computing ' + label.capitalize())
 
     # Initialize model (lambda)
-    T = len(codewords)
-    A = np.full(shape=(N, N), fill_value=1/N)
-    B = np.full(shape=(M, N), fill_value=1/N)
-    Pi = np.full(shape=(N,), fill_value=0)
+    A = np.random.rand(N, N)
+    B = np.random.rand(M, N)
+    Pi = np.zeros(N)
+    A /= A.sum(axis=1, keepdims=1)
+    B /= B.sum(axis=0, keepdims=1)
     Pi[0] = 1
 
     # Stop when likelihood plateus
@@ -367,8 +382,8 @@ def expectation_maximization(codewords, N, M, label):
     while True:
 
         # Expectation step: calculate parameters
-        alpha, alpha_scales = get_alpha(codewords, A, B, Pi)
-        beta, beta_scales = get_beta(codewords, A, B, Pi)
+        alpha, scales = get_alpha(codewords, A, B, Pi)
+        beta = get_beta(codewords, A, B, Pi, scales)
         gamma = get_gamma(alpha, beta)
         xi = get_xi(A, B, alpha, beta, codewords)
 
@@ -377,12 +392,14 @@ def expectation_maximization(codewords, N, M, label):
         B = update_B(B, gamma, codewords)
 
         # Save likelihoods
-        likelihood = np.sum(alpha[T-1])
+        likelihood = -np.sum(np.log(scales))
+        print(likelihood)
         likelihoods.append(likelihood)
-        if not likelihood_increased(likelihoods, delta=0.001):
+        if not likelihood_increased(likelihoods, delta=1000):
             break
 
     # Plot likelihood values
+    plot_likelihoods(likelihoods, label, folder)
 
     # Return model
     model = Model(A, B, Pi, label)
@@ -391,16 +408,51 @@ def expectation_maximization(codewords, N, M, label):
 
 def predict(gesture, models):
 
+    #import pdb; pdb.set_trace()
+
     # Predict most probable model
     predictions = np.zeros(shape=len(models))
     for i, model in enumerate(models):
         A, B, Pi = model.split_model()
         codewords = gesture.get_codewords()
-        alpha, alpha_scales = get_alpha(codewords, A, B, Pi)
-        likelihood = np.sum(alpha[-1])
+        alpha, scales = get_alpha(codewords, A, B, Pi)
+        likelihood = -np.sum(np.log(scales))
         predictions[i] = likelihood
 
     return predictions
+
+
+def get_models(gestures, labels, N, K, plot_folder, model_folder):
+
+    # Unpickle models
+    if listdir(model_folder):
+        with open(model_folder + 'models.pkl', 'rb') as f:
+            models = pickle.load(f)
+        return models
+
+    # Calculate models
+    models = []
+    for label in labels:
+        codewords = get_class_codewords(gestures, label)
+        model = expectation_maximization(codewords, N, K, label, plot_folder)
+        models.append(model)
+
+    # Pickle models
+    with open(model_folder + 'models.pkl', 'wb') as f:
+        pickle.dump(models, f)
+
+    return models
+
+
+def print_predictions(predictions, labels):
+    df = pd.DataFrame(data=predictions, columns=labels)
+    df2 = df.copy().astype('int32')
+    for i, row in enumerate(df):
+        order = np.argsort(-df.iloc[i]).values.tolist()
+        for j, idx in enumerate(order):
+            df2.iloc[i][idx] = int(j)
+    print(df)
+    print(df2)
 
 
 def main():
@@ -412,8 +464,10 @@ def main():
     plot_folder = base + '/imu_plots/'
     kmeans_plot_folder = base + '/kmeans_plot/'
     test_folder = base + '/test/'
+    likelihood_plots = base + '/likelihoods/'
+    models_folder = base + '/models/'
     labels = ['beat3', 'beat4', 'circle', 'eight', 'inf', 'wave']
-    optimal_k = 10
+    optimal_k = 30
     num_hidden_states = 6
 
     # Load train imu data
@@ -429,11 +483,7 @@ def main():
     gestures = discretize(gestures, optimal_k)
 
     # Model each type
-    models = []
-    for label in labels:
-        codewords = get_class_codewords(gestures, label)
-        model = expectation_maximization(codewords, num_hidden_states, optimal_k, label)
-        models.append(model)
+    models = get_models(gestures, labels, num_hidden_states, optimal_k, likelihood_plots, models_folder)
 
     # Load test imu data
     test_gestures = load_txt_files(train_single_folder) # TODO: change to test folder
@@ -447,8 +497,7 @@ def main():
         predictions[i] = predict(test, models)
 
     # Print predictions
-    df = pd.DataFrame(data=predictions, columns=labels)
-    print(df)
+    print_predictions(predictions, labels)
 
 if __name__ == '__main__':
     main()
