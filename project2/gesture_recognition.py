@@ -154,13 +154,24 @@ def kmeans(points, k):
 
 
 # Save the codeword (cluster) each gesture point belongs to
-def discretize(gestures, k):
+def discretize(gestures, k, folder, train=True):
 
-    # Get cluster centers
-    centers = kmeans(get_points(gestures), k)
-    tree = cKDTree(centers)
+    # Generate cluster centers once
+    if train and not listdir(folder):
+        centers = kmeans(get_points(gestures), k)
+        tree = cKDTree(centers)
+        km = KMeans(n_clusters=k).fit(get_points(gestures))  # TODO: remove SCIKIT
+        # Save onto disk
+        with open(folder + 'kmeans.pkl', 'wb') as f:
+            pickle.dump(km, f)
+        with open(folder + 'tree.pkl', 'wb') as f:
+            pickle.dump(tree, f)
 
-    km = KMeans(n_clusters=k).fit(get_points(gestures)) # TODO: remove SCIKIT
+    # Reuse calculated clusters
+    with open(folder + 'kmeans.pkl', 'rb') as f:
+        km = pickle.load(f)
+    with open(folder + 'tree.pkl', 'rb') as f:
+        tree = pickle.load(f)
 
     # Save codeword for each point (cluster)
     for gesture in gestures:
@@ -437,6 +448,7 @@ def expectation_maximization(codewords, N, M, label, folder):
             if not likelihood_increased(likelihoods, delta=1):
                 break
 
+        #pdb.set_trace()
         #print('LIKELIHOOD[-1] = ' + str(likelihoods[-1]))
         print('Likelihood = ' + str(likelihoods[-1]))
         if likelihoods[-1] > best:
@@ -525,6 +537,7 @@ def main():
     test_folder = base + '/test/'
     likelihood_plots = base + '/likelihoods/'
     models_folder = base + '/models/'
+    kmeans_folder = base + '/kmeans/'
     labels = ['beat3', 'beat4', 'circle', 'eight', 'inf', 'wave']
     optimal_k = 30 # TODO: change
     num_hidden_states = 6 # TODO: change
@@ -539,16 +552,16 @@ def main():
 
     # Discretize measurements with kmeans
     plot_kmeans(get_points(gestures), kmeans_plot_folder)
-    gestures = discretize(gestures, optimal_k)
+    gestures = discretize(gestures, optimal_k, kmeans_folder)
 
     # Model each type
     models = get_models(gestures, labels, num_hidden_states, optimal_k, likelihood_plots, models_folder)
 
     # Load test imu data
-    test_gestures = load_txt_files(test_folder, test=True) # TODO: change to test folder and True
+    test_gestures = load_txt_files(train_single_folder, test=True) # TODO: change to test folder and True
 
     # Discretize test data
-    test_gestures = discretize(test_gestures, optimal_k)
+    test_gestures = discretize(test_gestures, optimal_k, kmeans_folder, train=False)
 
     # Predict test data (most probable model)
     predictions = np.ndarray(shape=(len(test_gestures), len(models)))
