@@ -176,7 +176,7 @@ def discretize(gestures, k, folder, train=True):
     # Save codeword for each point (cluster)
     for gesture in gestures:
         _, indices = tree.query(gesture.get_df().drop(columns=['ts']))
-        indices = km.predict(gesture.get_df().drop(columns=['ts'])) # TODO remove
+        #indices = km.predict(gesture.get_df().drop(columns=['ts'])) # TODO remove
         gesture.set_codewords(indices)
 
     return gestures
