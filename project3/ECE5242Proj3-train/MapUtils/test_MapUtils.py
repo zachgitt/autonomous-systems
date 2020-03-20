@@ -9,7 +9,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import time
 import pdb
 # todo load mat
-dataIn = io.loadmat("../data/Hokuyo20.mat")
+dataIn = io.loadmat("../train/Hokuyo20.mat")
 ranges = np.array([dataIn['Hokuyo0']['ranges'][0][0][:,0]]).T
 angles = np.double(dataIn['Hokuyo0']['angles'][0][0])
 

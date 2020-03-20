@@ -22,7 +22,7 @@ def replay_lidar(lidar_data):
 		ax.set_rticks([0.5, 1, 1.5, 2])  # less radial ticks
 		ax.set_rlabel_position(-22.5)  # get radial labels away from plotted line
 		ax.grid(True)
-		ax.set_title("Lidar scan data", va='bottom')
+		ax.set_title("Lidar scan train", va='bottom')
 
 		plt.draw()
 		plt.pause(0.001)

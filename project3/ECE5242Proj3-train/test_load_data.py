@@ -2,10 +2,9 @@
 
 import load_data as ld
 import p3_util as ut
+imu_ts, acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z	 = ld.get_imu('train/imu20.mat')
 
-acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z, imu_ts	 = ld.get_imu('data/imu20')
+enc_ts, FR, FL, RR, RL = ld.get_encoder('train/Encoders20.mat')
 
-FR, RL, RR, RL,enc_ts = ld.get_encoder('data/Encoders20')
-
-lidar = ld.get_lidar('data/Hokuyo20')
+lidar = ld.get_lidar('train/Hokuyo20.mat')
 ut.replay_lidar(lidar)

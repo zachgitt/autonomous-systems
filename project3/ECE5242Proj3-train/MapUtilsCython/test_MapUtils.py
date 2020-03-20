@@ -12,7 +12,7 @@ import MapUtils_fclad as MU2
 # todo load mat
 #load train_lidar0.mat;
 plt.ion()
-dataIn = io.loadmat("../data/Hokuyo20.mat")
+dataIn = io.loadmat("../train/Hokuyo20.mat")
 
 angles = np.double(dataIn['Hokuyo0']['angles'][0][0])
 ranges = np.array([dataIn['Hokuyo0']['ranges'][0][0][:,0]]).T
