@@ -101,14 +101,14 @@ class Robot:
         self.lidar['y'] = float('NaN')
 
         # Center wheel to center wheel width
-        circum = 254
+        diam = 254
         width = 393.7
         th_glob = 0
         x_glob = 0
         y_glob = 0
         for i in range(self.lidar.shape[0]):
-            eL = circum * (self.lidar['LeftTicks'].iloc[i] / 360)
-            eR = circum * (self.lidar['RightTicks'].iloc[i] / 360)
+            eL = pi * diam * (self.lidar['LeftTicks'].iloc[i] / 360)
+            eR = pi * diam * (self.lidar['RightTicks'].iloc[i] / 360)
             th = (eR - eL) / width
             th_glob += th
 
@@ -141,7 +141,7 @@ class Robot:
             assert(0, 'Increase the map size!')
         return int(i), int(j)
 
-    def calculate_map(self, height=7001, width=7001, rmax=10, rmin=-10, alpha_hit=0.7, alpha_miss=0.3):
+    def calculate_map(self, height=7501, width=7501, rmax=10, rmin=-10, alpha_hit=0.7, alpha_miss=0.3):
         """
         Height and width in centimeters.
         """
