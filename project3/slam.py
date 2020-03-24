@@ -102,7 +102,7 @@ class Robot:
 
         # Center wheel to center wheel width
         diam = 254
-        width = 393.7
+        width = 750 #760 #750 #740 #720 #700 #900 #800 #733 #393.7
         th_glob = 0
         x_glob = 0
         y_glob = 0
@@ -141,7 +141,7 @@ class Robot:
             assert(0, 'Increase the map size!')
         return int(i), int(j)
 
-    def calculate_map(self, height=7501, width=7501, rmax=10, rmin=-10, alpha_hit=0.7, alpha_miss=0.3):
+    def calculate_map(self, height=11001, width=11001, rmax=10, rmin=-10, alpha_hit=1.1, alpha_miss=0.05):
         """
         Height and width in centimeters.
         """
