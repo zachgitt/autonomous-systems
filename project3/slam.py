@@ -20,7 +20,7 @@ def frange(start, stop, step):
 class Robot:
 
     # Map height and width are in centimeters
-    def __init__(self, encoder_in, lidar_in, imu_in, height=15001, width=15001, rmax=10, rmin=-10, alpha_hit=1.1, alpha_miss=0.05):
+    def __init__(self, encoder_in, lidar_in, imu_in, height=15001, width=15001, rmax=10, rmin=-10, alpha_hit=1.1, alpha_miss=0.3): # TODO: change miss back to 0.05, increasing to .3 should decrease whiteness of map though
 
         # Save map parameters
         self.height = height
@@ -222,17 +222,18 @@ class Robot:
         # Map range (rmin, rmax) to (white, black) aka (miss, hit)
         img = np.round(np.interp(map, [-10, 10], [255, 0]))
         img = Image.fromarray(img.astype('uint8'))
-        #img.save(map_folder + name + str(idx) + '.png')
 
-        # Save pose as red dots
+        # Convert to rgb
         rgbimg = Image.new("RGBA", img.size)
         rgbimg.paste(img)
-        for row in range(self.lidar.shape[0]):
-            i, j = self.map_indices(self.lidar['x'].iloc[row], self.lidar['y'].iloc[row], self.height, self.width)
-            rgbimg.putpixel((j, i), (255, 0, 0))
+
+        # Save pose as red dots
+        if name == 'deadreckon':
+            for row in range(self.lidar.shape[0]):
+                i, j = self.map_indices(self.lidar['x'].iloc[row], self.lidar['y'].iloc[row], self.height, self.width)
+                rgbimg.putpixel((j, i), (255, 0, 0))
 
         rgbimg.save(map_folder + name + str(idx) + '.png')
-
 
     def init_map(self):
         self.slam_map = np.zeros(shape=(self.height, self.width))
@@ -270,11 +271,11 @@ class Robot:
             self.lidar[name_th] = float('NaN')
 
             # Initialize pose of each particle
-            self.lidar[name_x].iloc[0] = np.random.normal(loc=0, scale=sigma)
-            self.lidar[name_y].iloc[0] = np.random.normal(loc=0, scale=sigma)
-            self.lidar[name_th].iloc[0] = np.random.normal(loc=0, scale=sigma)
+            self.lidar[name_x].iloc[0] = 0 #np.random.normal(loc=0, scale=sigma)
+            self.lidar[name_y].iloc[0] = 0 #np.random.normal(loc=0, scale=sigma)
+            self.lidar[name_th].iloc[0] = 0 #np.random.normal(loc=0, scale=sigma)
 
-    def update_particles(self, t, N, diam=254, width=750, hit_thresh=0.5):
+    def update_particles(self, t, N, diam=254, width=725, hit_thresh=0.5, sigma=1):
 
         # Calculate local measurements
         eL = pi * diam * (self.lidar['LeftTicks'].iloc[t] / 360)
@@ -282,26 +283,32 @@ class Robot:
         d_th = (eR - eL) / width
 
         # Calculate each particle's measurements
-        counts = [0] * N
+        counts = np.zeros(N)
         for n in range(N):
             name_x = 'particle' + str(n) + '_x'
             name_y = 'particle' + str(n) + '_y'
             name_th = 'particle' + str(n) + '_th'
 
-            # Update particle angle
-            th = self.lidar[name_th].iloc[t-1] + d_th
+            # Skip calculations when no movement (but still update measurements)
+            if d_th == 0:
+                self.lidar[name_th].iloc[t] = self.lidar[name_th].iloc[t-1]
+                self.lidar[name_x].iloc[t] = self.lidar[name_x].iloc[t-1]
+                self.lidar[name_y].iloc[t] = self.lidar[name_y].iloc[t-1]
+                continue
+
+            # Update particle angle (with noise)
+            th = self.lidar[name_th].iloc[t-1] + d_th + np.random.normal(scale=sigma)
             self.lidar[name_th].iloc[t] = th
 
-            # Update particle position
-            dx = np.cos(th) * (eL + eR) / 2
-            dy = np.sin(th) * (eL + eR) / 2
+            # Update particle position (with noise)
+            dx = np.cos(th) * (eL + eR) / 2 + np.random.normal(scale=sigma)
+            dy = np.sin(th) * (eL + eR) / 2 + np.random.normal(scale=sigma)
             x = self.lidar[name_x].iloc[t - 1] + dx / 10 # Centimeter
             y = self.lidar[name_y].iloc[t - 1] + dy / 10 # Centimeter
             self.lidar[name_x].iloc[t] = x
             self.lidar[name_y].iloc[t] = y
 
             # Count particle hits
-            i, j = self.map_indices(x, y, self.height, self.width)
             for col, angle in zip(self.get_column_names(), self.get_angles()):
 
                 # Determine hit location
@@ -310,25 +317,26 @@ class Robot:
                 y_hit = dist * sin(th + angle) + y
                 i_hit, j_hit = self.map_indices(x_hit, y_hit, self.height, self.width)
 
-                # Check map also hit
-                if self.slam_map[i_hit][j_hit] > hit_thresh:
+                # Check this hit aligns well with map hits
+                if self.slam_map[i_hit][j_hit] > hit_thresh: # TODO: how do you adjust this threshold? It will only match with the map if it aligns with t=0 hit
                     # Save count
                     counts[n] += 1
 
+        # No movement
+        if not counts.any():
+            print('No Movement')
+            return counts
+
         # Calculate weights
-        total_count = sum(counts)
-        weights = [count / total_count for count in counts]
+        weights = counts / counts.sum()
         return weights
 
-    def update_map(self, t, weights):
+    # Anything closer than nearby (centimeters) will not be added to the map
+    def update_map(self, t, weights, nearby=20):
 
         # Find best particle
-        idx = 0
-        best = 0
-        for i, weight in enumerate(weights):
-            if weight > best:
-                idx = i
-                best = weight
+        idx = np.where(weights == np.amax(weights))[0][0]
+        print('Best Particle = ' + str(idx))
 
         # Save particle vars
         name_x = 'particle' + str(idx) + '_x'
@@ -342,8 +350,13 @@ class Robot:
         # Iterate all angles
         for col, angle in zip(self.get_column_names(), self.get_angles()):
 
-            # Determine hit location
+            # Skip nearby hits  # TODO: nearby hits still seem to exist
             dist = self.lidar[col].iloc[t] * 100  # Convert meter to centimeter
+            if dist < nearby:
+                print('hit too close')
+                continue
+
+            # Determine map indices
             x_hit = dist * cos(th + angle) + x
             y_hit = dist * sin(th + angle) + y
             i_hit, j_hit = self.map_indices(x_hit, y_hit, self.height, self.width)
@@ -411,7 +424,6 @@ class Robot:
         param N: Number of particles
         """
         # Initialize map
-        pdb.set_trace()
         self.init_map()
 
         # Initialize particles with noise
@@ -420,10 +432,20 @@ class Robot:
         # Run slam over each time step
         for t in range(1, self.lidar.shape[0]):
             print('Robot' + str(idx) + ' t=' + str(t) + '/' + str(self.lidar.shape[0]))
+            if t == 385 + 100:
+                return
+
+            # Determine weights of each particle
             weights = self.update_particles(t, N)
+            if not weights.any():
+                # Skip timestep if no movement
+                continue
+
+            # Update the map with the best particle
             self.update_map(t, weights)
             if self.needs_resampling(weights, N, thresh=0.5):
                 self.resample(weights, N, t, sigma)
+                print('resampling')
 
 
 def read_data(folder):
@@ -448,6 +470,7 @@ def main():
 
     # Configuration
     base = os.getcwd() + '/ECE5242Proj3-train'
+    slam = True
     train = True
 
     # Run train or test
@@ -468,14 +491,16 @@ def main():
         # Precalculation
         robot.accumulate_ticks()
 
-        # Dead reckoning
-        robot.calculate_deadreckon_pose()
-        robot.calculate_deadreckon_map()
-        robot.print_map(robot.deadreckon_map, i, output_folder, 'deadreckon')
-
         # Slam
-        # robot.slam(i)
-        # robot.print_map(robot.slam_map, i, output_folder, 'slam')
+        if slam:
+            robot.slam(i)
+            robot.print_map(robot.slam_map, i, output_folder, 'slam')
+        else:
+            # Dead reckoning
+            robot.calculate_deadreckon_pose()
+            robot.calculate_deadreckon_map()
+            robot.print_map(robot.deadreckon_map, i, output_folder, 'deadreckon')
+
 
 if __name__ == '__main__':
     main()
