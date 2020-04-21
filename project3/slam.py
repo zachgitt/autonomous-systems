@@ -412,9 +412,9 @@ class Robot:
             name_x = 'particle' + str(i) + '_x'
             name_y = 'particle' + str(i) + '_y'
             name_th = 'particle' + str(i) + '_th'
-            self.lidar[name_x].iloc[t] = sample[i][0] #+ np.random.normal(loc=0, scale=sigma)
-            self.lidar[name_y].iloc[t] = sample[i][1] #+ np.random.normal(loc=0, scale=sigma)
-            self.lidar[name_th].iloc[t] = sample[i][2] #+ np.random.normal(loc=0, scale=sigma)
+            self.lidar[name_x].iloc[t] = sample[i][0]
+            self.lidar[name_y].iloc[t] = sample[i][1]
+            self.lidar[name_th].iloc[t] = sample[i][2]
 
     def slam(self, idx, N=40, sigma=10):
         """
@@ -440,7 +440,7 @@ class Robot:
                     print('No Movement')
                     continue
 
-            if t == 385 + 1000: # TODO: remove
+            if t == 385 + 700: # TODO: remove
                 break
 
             # Determine weights of each particle
@@ -450,7 +450,7 @@ class Robot:
             position = self.update_map(t, weights)
             positions.append(position)
             if self.needs_resampling(weights, N, thresh=0.5): # TODO: how to use this threshold?
-                self.resample(weights, N, t, sigma)
+                self.resample(weights, N, t)
                 print('resampling')
 
         return positions
