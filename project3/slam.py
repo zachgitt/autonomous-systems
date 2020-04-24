@@ -13,7 +13,7 @@ import pdb
 
 # TODO: change hit/miss ratio to .8/.3
 
-TEST_ROWS = 385 + 100
+#TEST_ROWS = 385 + 400 # TODO (replace line296 with TEST_ROWS)
 
 def frange(start, stop, step):
     i = start
@@ -37,12 +37,14 @@ class Robot:
         alpha_hit=1.1,
         alpha_miss=0.05,
         init_hit=5,
-        init_miss=-1,
-        hit_thresh=1,
+        init_miss=-5,
+        hit_thresh=5,
         sigma=1,
         sigma_th=3*pi/180,
         num_particles=40,
-        discretize=2):
+        discretize=1):
+
+        # TODO: 30 resamples with discretize 1, tests upto 785
 
         # TODO: change miss back to 0.05, increasing to .3 should decrease whiteness of map though
         # Parameter options:
@@ -277,7 +279,7 @@ class Robot:
         rgbimg.save(map_folder + name + str(idx) + '.png')
 
 
-    def print_particle_positions(self, idx, best_positions):
+    def print_particle_positions(self, idx, best_positions, map_folder):
 
         # Live update map range (rmin, rmax) to (white, black) aka (miss, hit)
         img = np.round(np.interp(self.slam_map, [self.rmin, self.rmax], [255, 0]))
@@ -291,7 +293,7 @@ class Robot:
         for position in best_positions:
             rgbimg.putpixel((position[1], position[0]), (128, 0, 128))
 
-        for t in range(TEST_ROWS):
+        for t in range(self.lidar.shape[0]): # TODO: replace with self.lidar.shape[0] or TEST_ROWS
             # Save best position as purple
 
 
@@ -311,19 +313,29 @@ class Robot:
                 #     rgbimg.putpixel((j, i), (0, 255, 0))
                 # elif p % 3 == 2:
                 #     rgbimg.putpixel((j, i), (0, 0, 255))
-        rgbimg.save(os.getenv('HOME') + '/Desktop/slam' + str(idx) + '.png')
+        rgbimg.save(map_folder + 'slamparticles' + str(idx) + '.png')
         print('LIVE MAP PRINTED')
 
     def discretizer(self, i, j):
+
+        # Determine which block this cell belongs to
         size = self.discretize
-        adj = [] # TODO: return list of tuples, adjacent i/j pairs
+        block_i = int(i/size)
+        block_j = int(j/size)
+
+        # List all cells in this block
+        cells = []
+        for d1 in range(size):
+            for d2 in range(size):
+                cell = (block_i * size + d1, block_j * size + d2)
+                cells.append(cell)
+
+        return cells
 
         # TODO: find offset of block this belongs to: i.e. block_row=20, block_col=40
         #  width and height should be a multiple of block_row and block_col
-
         # TODO: record all adjacent cells in the block
 
-        return adj
 
     def init_map(self, init_hit, init_miss):
 
@@ -346,7 +358,8 @@ class Robot:
             # Add initial misses
             misses = list(bresenham(i, j, glob_i, glob_j))
             for miss in misses[1:]:  # skip the end
-                self.slam_map[miss[0]][miss[1]] = init_miss
+                for cell in self.discretizer(miss[0], miss[1]):
+                    self.slam_map[cell[0]][cell[1]] = init_miss
 
     # Initialize n particles with noise
     def init_particles(self, N):
@@ -460,7 +473,7 @@ class Robot:
         particle_th = self.lidar[name_th].iloc[t]
         particle_i, particle_j = self.map_indices(particle_x, particle_y, self.height, self.width)
 
-        print('Best Particle (x,y) = (' + str(particle_x) + ',' + str(particle_y) + ')')
+        print('Best Particle idx = ' + str(idx) + ' (x,y) = (' + str(particle_x) + ',' + str(particle_y) + ')')
         ratio = 0 # TODO: remove
 
         positions = []
@@ -488,7 +501,8 @@ class Robot:
             misses = list(bresenham(i_hit, j_hit, particle_i, particle_j))
             for miss in misses[1:]:  # skip the origin
                 if self.slam_map[miss[0]][miss[1]] - self.alpha_miss > self.rmin:
-                    self.slam_map[miss[0]][miss[1]] -= self.alpha_miss
+                    for cell in self.discretizer(miss[0], miss[1]):
+                        self.slam_map[cell[0]][cell[1]] -= self.alpha_miss
 
         print('Nearby Ratio: ' + str(ratio/1081))# TODO: remove
 
@@ -501,9 +515,10 @@ class Robot:
         top = sum(weights) ** 2
         bottom = sum([weight ** 2 for weight in weights])
         ratio = top / bottom
+        ratio = ratio / N  # Convert ratio between 1-N to probability
 
         # Ratio is between 1-N
-        return ratio < thresh * N
+        return ratio < thresh
 
     # Resample the particles and add noise
     def resample(self, weights, N, t):
@@ -559,6 +574,9 @@ class Robot:
         # Save positions
         positions = []
 
+        # Count resampled
+        resample_count = 0
+
         # Run slam over each time step
         for t in range(1, self.lidar.shape[0]):
             print('Robot' + str(idx) + ' t=' + str(t) + '/' + str(self.lidar.shape[0]))
@@ -570,8 +588,10 @@ class Robot:
                     #print('No Movement')
                     #continue
 
-            if t >= TEST_ROWS: # TODO: remove
-                break
+
+            #if t >= TEST_ROWS: # TODO: remove
+            #    print('RESAMPLE total = ' + str(resample_count))
+            #    break
 
             # Determine weights of each particle
             weights = self.update_particles(t, N, self.sigma, self.hit_thresh)
@@ -585,14 +605,15 @@ class Robot:
             positions.append(position)
             if self.needs_resampling(weights, N, thresh=0.5): # TODO: how to use this threshold?
                 self.resample(weights, N, t)
-                print('resampling')
+                resample_count += 1
+                print('resampling for the ' + str(resample_count) + ' time')
 
         return positions
 
 def read_data(folder):
 
-    # Determine number of files
-    files = sorted(os.listdir(folder))
+    # Determine number of nonhidden files
+    files = sorted([f for f in os.listdir(folder) if not f.startswith('.')])
     num = int(len(files)/3)
 
     # Read each trial run
@@ -612,7 +633,7 @@ def main():
     # Configuration
     base = os.getcwd() + '/ECE5242Proj3-train'
     slam = True
-    train = True
+    train = False
 
     # Run train or test
     if train:
@@ -637,7 +658,7 @@ def main():
         if slam:
             positions = robot.slam(i)
             robot.print_map(robot.slam_map, i, output_folder, 'slam', positions)
-            robot.print_particle_positions(i, positions)
+            robot.print_particle_positions(i, positions, output_folder)
         else:
             # Dead reckoning
             robot.calculate_deadreckon_map()
@@ -646,3 +667,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+    # TODO: discretize misses
