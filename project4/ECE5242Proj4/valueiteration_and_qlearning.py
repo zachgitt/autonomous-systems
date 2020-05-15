@@ -69,6 +69,9 @@ def main():
         # Save optimal action for the state
         pi[state_in] = action_max
 
+    # Save optimal Q values
+    np.save('q.npy', Q)
+
     # Print optimal path (assuming no slippage)
     state = 0
     while not is_goal_state(state, env):
