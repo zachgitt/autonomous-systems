@@ -1,0 +1,1 @@
+Run valueiteration_and_qlearning.py and three plots of the average steps, average rewards, and root mean squared errors (RMSEs) will be saved into the directory for different variations of alpha and epsilon.
