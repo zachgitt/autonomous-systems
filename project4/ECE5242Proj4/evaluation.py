@@ -2,9 +2,13 @@
 
 import numpy as np
 
-def get_action_egreedy(values ,epsilon):
+def get_action_egreedy(values, epsilon, num_actions):
 	# Implement epsilon greedy action policy
-	NotImplementedError
+	best_idx = np.argmax(values)
+	action_probs = np.ones(num_actions) * epsilon / num_actions
+	action_probs[best_idx] += (1.0 - epsilon)
+	action = np.random.choice(np.arange(num_actions), p=action_probs)
+	return action
 
 def evaluation(env, Q_table, step_bound = 100, num_itr = 10):
 	"""
@@ -32,7 +36,7 @@ def evaluation(env, Q_table, step_bound = 100, num_itr = 10):
 		reward = 0.0
 		done = False
 		while((not done) and (step < step_bound)):
-			action = get_action_egreedy(Q_table[state], 0.05)
+			action = get_action_egreedy(Q_table[state], 0.05, env.anum)
 			r, state_n, done = env.step(state,action)
 			state = state_n
 			reward += r
